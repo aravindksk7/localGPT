@@ -21,7 +21,7 @@ from transformers import (
     pipeline,
 )
 
-from constants import EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
+from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -48,7 +48,7 @@ def load_model(device_type, model_id, model_basename=None):
     if model_basename is not None:
         if ".ggml" in model_basename:
             logging.info("Using Llamacpp for GGML quantized models")
-            model_path = hf_hub_download(repo_id=model_id, filename=model_basename, resume_download=True)
+            model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
             max_ctx_size = 2048
             kwargs = {
                 "model_path": model_path,
@@ -189,7 +189,7 @@ def main(device_type, show_sources):
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
         embedding_function=embeddings,
-
+        client_settings=CHROMA_SETTINGS,
     )
     retriever = db.as_retriever()
     

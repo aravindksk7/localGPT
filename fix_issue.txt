@@ -1,0 +1,62 @@
+Cause 1 (most likely) — cmdb_api_type defaulted to 'cmdb_instance' after V21.0.2
+When V21.0.2 ran ALTER TABLE ... ADD COLUMN cmdb_api_type ... DEFAULT 'cmdb_instance', PostgreSQL applied that default to all existing rows. Your on-prem servicenow_config row got cmdb_api_type = 'cmdb_instance'.
+
+In Docker (fresh install), you explicitly set it to 'table' via the UI. On on-prem you likely never did — it stayed at the migration default.
+
+Result: on-prem sync hits /cmdb/instance/cmdb_ci?sys_class_name=cmdb_ci_server&... instead of /table/cmdb_ci_server. If the service account lacks CMDB Instance API ACL, ServiceNow returns 400.
+
+Cause 2 — Scheduled sync still hitting cmdb_ci_netgear (V21.0.3 didn't apply cleanly)
+The controller's manual trigger bypasses the DB classes. But syncAllIntegrations() (scheduled, every 5 min) calls runSync(id) with no ciClasses argument → falls through to syncFilters.classes from DB. If V21.0.3's UPDATE didn't run, that still has cmdb_ci_netgear.
+
+Cause 3 — V21.0.2 not applied at all
+SELECT ci_sync_filters, cmdb_api_type FROM servicenow_config throws column "cmdb_api_type" does not exist before the job record is created. The jobPromise.catch swallows it and returns null. Controller returns 202 { status: 'Running' } — job never appears in sync history.
+
+Diagnostic — run these on the on-prem DB
+
+-- 1. Check the current config state
+SELECT 
+  integration_id,
+  cmdb_api_type,
+  ci_sync_filters->'classes' AS classes,
+  ci_sync_filters->>'sysparm_query' AS sysparm_query
+FROM servicenow_config;
+
+-- 2. Read the exact error from the last sync jobs
+SELECT 
+  job_id,
+  status,
+  error_message,
+  ci_classes_synced,
+  created_at,
+  completed_at
+FROM cmdb_sync_jobs
+ORDER BY created_at DESC
+LIMIT 5;
+What you see	Root cause
+cmdb_api_type = 'cmdb_instance'	Cause 1 — fix below
+error_message contains cmdb_ci_netgear: HTTP 400	Cause 2 — V21.0.3 didn't update the row
+Query fails with column "cmdb_api_type" does not exist	Cause 3 — V21.0.2 never ran
+Fix for each
+Cause 1 — set table mode on on-prem (either via UI → Integrations → CMDB Settings, or directly):
+
+
+UPDATE servicenow_config 
+SET cmdb_api_type = 'table'
+WHERE integration_id = '<your-integration-id>';
+Cause 2 — re-run V21.0.3's UPDATE manually:
+
+
+UPDATE servicenow_config
+SET ci_sync_filters = jsonb_set(
+  ci_sync_filters,
+  '{classes}',
+  (SELECT jsonb_agg(
+    CASE WHEN elem::text = '"cmdb_ci_netgear"' 
+         THEN '"cmdb_ci_ip_router"'::jsonb 
+         ELSE elem END
+  ) FROM jsonb_array_elements(ci_sync_filters->'classes') AS elem)
+)
+WHERE ci_sync_filters->'classes' @> '"cmdb_ci_netgear"'::jsonb;
+Cause 3 — apply V21.0.2 migration (backend/database/migrations/V21.0.2__servicenow_cmdb_api_type.sql), then set cmdb_api_type = 'table' as above.
+
+Run the diagnostic queries first and share what cmdb_api_type and error_message show.

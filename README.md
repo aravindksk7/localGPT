@@ -285,3 +285,85 @@ This is a test project to validate the feasibility of a fully local solution for
        conda uninstall tokenizers, transformers
        pip install transformers
     ```
+grep -A 3 '"axios"' c:/ENV/test-env-management/frontend/package-lock.json | head -20
+
+OUT
+        "axios": "^1.14.0",
+        "date-fns": "^4.1.0",
+        "dayjs": "^1.11.13",
+        "echarts": "^6.0.0",
+
+        
+grep -A 3 '"axios"' c:/ENV/test-env-management/backend/package-lock.json | head -20
+
+OUT
+        "axios": "^1.14.0",
+        "bcryptjs": "^2.4.3",
+        "cors": "^2.8.5",
+        "csv-parse": "^5.5.2",
+Bash Check resolved axios version in frontend node_modules section of lockfile
+IN
+grep -A 5 '"node_modules/axios"' c:/ENV/test-env-management/frontend/package-lock.json | head -15
+
+OUT
+    "node_modules/axios": {
+      "version": "1.14.0",
+      "resolved": "https://registry.npmjs.org/axios/-/axios-1.14.0.tgz",
+      "integrity": "sha512-3Y8yrqLSwjuzpXuZ0oIYZ/XGgLwUIBU3uLvbcpb0pidD9ctpShJd43KSlEEkVQg6DS0G9NKyzOvBfUtDKEyHvQ==",
+      "license": "MIT",
+      "dependencies": {
+Bash Check resolved axios version in backend node_modules section of lockfile
+IN
+grep -A 5 '"node_modules/axios"' c:/ENV/test-env-management/backend/package-lock.json | head -15
+
+OUT
+    "node_modules/axios": {
+      "version": "1.14.0",
+      "resolved": "https://registry.npmjs.org/axios/-/axios-1.14.0.tgz",
+      "integrity": "sha512-3Y8yrqLSwjuzpXuZ0oIYZ/XGgLwUIBU3uLvbcpb0pidD9ctpShJd43KSlEEkVQg6DS0G9NKyzOvBfUtDKEyHvQ==",
+      "license": "MIT",
+      "dependencies": {
+Bash Check if malicious plain-crypto-js package exists in frontend
+IN
+ls c:/ENV/test-env-management/frontend/node_modules/plain-crypto-js 2>/dev/null && echo "FOUND" || echo "NOT FOUND"
+
+OUT
+NOT FOUND
+Bash Check if malicious plain-crypto-js package exists in backend
+IN
+ls c:/ENV/test-env-management/backend/node_modules/plain-crypto-js 2>/dev/null && echo "FOUND" || echo "NOT FOUND"
+
+OUT
+NOT FOUND
+You are not impacted. Here's the full picture:
+
+Axios Version & Security Incident Assessment
+Version in use
+Both frontend and backend declare "axios": "^1.14.0" in their package.json files.
+
+Both package-lock.json files resolve to axios@1.14.0 — the last legitimate, safe release.
+
+The Incident (Elastic Security Labs, March 31, 2026)
+Elastic Security Labs disclosed a supply chain compromise of the axios npm package (GHSA-fw8c-xr5c-95f9 / MAL-2026-2306):
+
+An attacker hijacked a maintainer's npm account and published backdoored axios@1.14.1 (tagged latest) and axios@0.30.4
+These versions introduced a malicious transitive dependency plain-crypto-js@4.2.1 via a postinstall hook
+The payload was a cross-platform Remote Access Trojan (RAT) targeting macOS, Windows, and Linux — stealing cloud keys, API tokens, and database credentials
+The malicious versions were live for ~3 hours (00:21–03:25 UTC, March 31, 2026) before npm removed them
+Google Threat Intelligence attributed the attack to UNC1069 (North Korea-nexus actor)
+Safe versions: axios@1.14.0 and below.
+
+Status: NOT AFFECTED
+Check	Frontend	Backend
+Declared version	^1.14.0	^1.14.0
+Locked version	1.14.0 ✅	1.14.0 ✅
+plain-crypto-js present	NOT FOUND ✅	NOT FOUND ✅
+Your lockfiles were generated before 1.14.1 was published, so they resolved to 1.14.0 and were never updated during the ~3 hour exposure window.
+
+Recommended precaution
+Pin axios to an exact version in package.json to prevent accidental resolution to a future malicious release:
+
+
+"axios": "1.14.0"
+instead of "^1.14.0" — the caret range would resolve to any future 1.x.x published as latest.
+
